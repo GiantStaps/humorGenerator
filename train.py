@@ -1,52 +1,45 @@
-from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments, Trainer
-from datasets import load_dataset
+from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments, Trainer
 from config import Config
-import os
+from utils import prepare_dataset
 
 def train_model():
     # Load tokenizer and model
     tokenizer = AutoTokenizer.from_pretrained(Config.TOKENIZER_NAME)
     model = AutoModelForCausalLM.from_pretrained(Config.MODEL_NAME)
 
-    # Load datasets
-    data_files = {"train": Config.CLEANED_TRAIN, "validation": Config.CLEANED_VAL}
-    dataset = load_dataset("text", data_files=data_files)
-    
-    # Tokenize datasets
-    def tokenize_function(examples):
-        return tokenizer(examples["text"], truncation=True, padding="max_length", max_length=128)
-    
-    tokenized_datasets = dataset.map(tokenize_function, batched=True)
-    
-    # Training arguments
+    # Add padding token if not present
+    if tokenizer.pad_token is None:
+        tokenizer.add_special_tokens({'pad_token': tokenizer.eos_token})
+    model.resize_token_embeddings(len(tokenizer))
+
+    # Prepare datasets
+    train_dataset = prepare_dataset(f"{Config.DATA_DIR}/train.jsonl", tokenizer, Config.MAX_SEQ_LEN)
+    val_dataset = prepare_dataset(f"{Config.DATA_DIR}/val.jsonl", tokenizer, Config.MAX_SEQ_LEN)
+
+    # Define training arguments
     training_args = TrainingArguments(
-        output_dir=Config.MODEL_OUTPUT_DIR,
-        evaluation_strategy="steps",
-        logging_dir="./logs",
-        per_device_train_batch_size=Config.BATCH_SIZE,
-        gradient_accumulation_steps=Config.GRADIENT_ACCUMULATION_STEPS,
+        output_dir=Config.OUTPUT_DIR,
+        evaluation_strategy="epoch",
         learning_rate=Config.LEARNING_RATE,
-        num_train_epochs=Config.MAX_EPOCHS,
-        logging_steps=Config.LOGGING_STEPS,
-        save_steps=Config.SAVE_STEPS,
+        per_device_train_batch_size=Config.BATCH_SIZE,
+        num_train_epochs=Config.NUM_EPOCHS,
+        save_strategy="epoch",
         save_total_limit=2,
-        fp16=True,
+        logging_dir=f"{Config.OUTPUT_DIR}/logs",
         load_best_model_at_end=True
     )
 
-    # Trainer
+    # Initialize and train the model
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=tokenized_datasets["train"],
-        eval_dataset=tokenized_datasets["validation"],
-        tokenizer=tokenizer
+        train_dataset=train_dataset,
+        eval_dataset=val_dataset
     )
-    
-    # Train
     trainer.train()
-    trainer.save_model(Config.MODEL_OUTPUT_DIR)
-    print("Model training completed.")
+    trainer.save_model(Config.OUTPUT_DIR)
+    print(f"Model saved to {Config.OUTPUT_DIR}")
 
 if __name__ == "__main__":
+    Config.ensure_dirs()
     train_model()

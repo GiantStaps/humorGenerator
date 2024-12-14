@@ -1,25 +1,25 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from config import Config
-import os
+from utils import save_data
 
-def preprocess_data():
-    # Load data
-    data = pd.read_csv(Config.DATASET_PATH)
-    
-    # Clean and prepare jokes
-    data['Joke'] = data['Joke'].str.strip()
-    data = data.drop_duplicates(subset='Joke')
-    data = data[data['Joke'].notnull() & (data['Joke'].str.len() > 0)]
-    
-    # Split into train/validation
-    train_data, val_data = train_test_split(data['Joke'], test_size=0.2, random_state=42)
-    
-    # Save to text files
-    os.makedirs(os.path.dirname(Config.CLEANED_TRAIN), exist_ok=True)
-    train_data.to_csv(Config.CLEANED_TRAIN, index=False, header=False)
-    val_data.to_csv(Config.CLEANED_VAL, index=False, header=False)
-    print("Data preprocessing completed.")
+def preprocess_data(input_file):
+    # Load jokes dataset
+    jokes = pd.read_csv(input_file)["Joke"].dropna().str.strip()
+
+    # Add instructions to each joke
+    instruction_template = "Tell me a joke."
+    data = [{"instruction": instruction_template, "response": joke} for joke in jokes]
+
+    # Split into training and validation sets
+    train_data, val_data = train_test_split(data, test_size=0.2, random_state=42)
+
+    # Save processed data
+    save_data(train_data, f"{Config.DATA_DIR}/train.jsonl")
+    save_data(val_data, f"{Config.DATA_DIR}/val.jsonl")
+
+    print(f"Preprocessing complete. Train and validation data saved to {Config.DATA_DIR}/")
 
 if __name__ == "__main__":
-    preprocess_data()
+    Config.ensure_dirs()
+    preprocess_data(f"{Config.DATA_DIR}/shortjokes.csv")
